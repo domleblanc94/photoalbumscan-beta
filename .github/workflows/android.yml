@@ -1,0 +1,35 @@
+name: Android checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check clean source privacy policy
+        run: |
+          mkdir "$RUNNER_TEMP/privacy-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/privacy-source"
+          python3 "$RUNNER_TEMP/privacy-source/tools/privacy_preflight.py" "$RUNNER_TEMP/privacy-source"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android platform
+        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
+      - name: Check and build unsigned release
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=2 -PphotoscanAbi=arm64-v8a :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease :app:compileDebugAndroidTestJavaWithJavac
+      - name: Upload unsigned developer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release
+          path: |
+            app/build/outputs/apk/release/*-unsigned.apk
+            app/build/outputs/bundle/release/*.aab
+          retention-days: 7

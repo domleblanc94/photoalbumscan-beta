@@ -1,0 +1,93 @@
+plugins { id 'com.android.application' version '8.7.3' }
+
+// These are the beta's selected owned models; do not silently fall back to legacy assets.
+def modelDigests = [
+    'print-detector.onnx': '600f58506ffa4bdd32ec61bc697a36b4f68b7357e7a60170ebc87f222b67c1ea',
+    'picture-own-roi.onnx': '7af326cd0368735fdd09a71cbb295c9f896b4a4b4f64a00cea887b2dd7f23fa9',
+    'picture-own-fallback-roi.onnx': 'c99d1dec299847f91767c05321af2c41c04f68a1928edfb1b2a05afc5fff1016'
+]
+tasks.register('verifyBundledModels') {
+    inputs.files(modelDigests.keySet().collect { file("src/main/assets/$it") })
+    doLast {
+        def actualNames = fileTree('src/main/assets') { include '**/*.onnx' }.files.collect { it.name }.toSet()
+        if (actualNames != modelDigests.keySet()) throw new GradleException('Unexpected bundled model set')
+        modelDigests.each { name, expected ->
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            file("src/main/assets/$name").withInputStream { stream ->
+                byte[] buffer = new byte[65536]
+                for (int count = stream.read(buffer); count != -1; count = stream.read(buffer)) digest.update(buffer, 0, count)
+            }
+            if (digest.digest().encodeHex().toString() != expected) throw new GradleException("SHA-256 mismatch for $name")
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyBundledModels' }
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+def requestedAbi = providers.gradleProperty('photoscanAbi').orNull
+if (requestedAbi != null && !(requestedAbi in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'])) {
+    throw new GradleException('Unsupported photoscanAbi')
+}
+def cameraXVersion = '1.4.2'
+android {
+    namespace 'local.photoscan'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.github.domleblanc94.photoalbumscan'
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '0.4.0-beta1'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        // Available on API 33+, with an explicit runtime preference that defaults OFF.
+        buildConfigField 'boolean', 'EXPERIMENTAL_CROP_REVIEW', 'true'
+        buildConfigField 'boolean', 'USE_OWN_PICTURE_MODELS', 'true'
+        buildConfigField 'boolean', 'OWN_PICTURE_SUPPLEMENT', 'true'
+        buildConfigField 'double', 'OWN_PICTURE_ROI_PADDING', '0.50'
+        buildConfigField 'double', 'OWN_PICTURE_HELPER_ROI_PADDING', '0.50'
+        buildConfigField 'String', 'OWN_PICTURE_CONTEXT_POLICY', '"shared_roi_v1"'
+        buildConfigField 'String', 'OWN_PICTURE_ROI_RECOVERY', '"constrained_line"'
+        buildConfigField 'String', 'OWN_PICTURE_ROI_EDGE_RETRY', '"source_edge_16"'
+        buildConfigField 'String', 'OWN_PICTURE_FIRST_HULL', '"legacy"'
+        buildConfigField 'String', 'OWN_PICTURE_FALLBACK_POLICY', '"mixed_trigger025_accept010"'
+        buildConfigField 'String', 'OWN_PICTURE_VERIFIER_POLICY', '"empty005_iou080_v2"'
+        buildConfigField 'String', 'OWN_PICTURE_LOCAL_POLICY', '"selected_underhalf_two75_split_v2"'
+        buildConfigField 'String', 'OWN_L1_GEOMETRY_FALLBACK_POLICY', '"l1-failed-helper-envelope-v1"'
+        buildConfigField 'String', 'PRINT_LOCATOR_SHA256', '"' + modelDigests['print-detector.onnx'] + '"'
+        buildConfigField 'String', 'OWN_PICTURE_ROI_SHA256', '"' + modelDigests['picture-own-roi.onnx'] + '"'
+        buildConfigField 'String', 'OWN_PICTURE_FALLBACK_SHA256', '"' + modelDigests['picture-own-fallback-roi.onnx'] + '"'
+        if (requestedAbi != null) ndk { abiFilters requestedAbi }
+    }
+    // Avoid embedding workstation VCS discovery or parent-checkout revisions.
+    buildTypes.configureEach { vcsInfo.include = false }
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.activity:activity:1.9.3'
+    implementation "androidx.camera:camera-core:${cameraXVersion}"
+    implementation "androidx.camera:camera-camera2:${cameraXVersion}"
+    implementation "androidx.camera:camera-lifecycle:${cameraXVersion}"
+    implementation "androidx.camera:camera-view:${cameraXVersion}"
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.exifinterface:exifinterface:1.4.1'
+    implementation 'org.opencv:opencv:4.13.0'
+
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.31.1'
+    // Preserve the support-library versions selected by the private trial after removing ML Kit.
+    constraints {
+        implementation('androidx.appcompat:appcompat:1.6.1')
+        implementation('androidx.appcompat:appcompat-resources:1.6.1')
+        implementation('androidx.fragment:fragment:1.3.6')
+    }
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+}

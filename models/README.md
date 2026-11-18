@@ -1,0 +1,5 @@
+# Architecture reference
+
+`architecture.py` contains the selected L1 `PrintDetector` and R3/c99 `PictureROIModel` definitions. The locator uses a torchvision MobileNetV3-small backbone instantiated with `weights=None`; the refiner uses timm MobileNetV3-small features with `pretrained=False` by default. Creating these classes does not reproduce the shipped weights.
+
+This optional Python reference is not used by the Android build. It requires PyTorch, torchvision and timm, each under its own license. The ONNX exports embedded in the Android app are authoritative for this beta and are pinned in `app/build.gradle`. No training data, private training scripts, pretrained backbone tensor files, checkpoints, export environment or training reproducibility claim is included. Do not enable pretrained downloads when inspecting the default architecture.

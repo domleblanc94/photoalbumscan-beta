@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest an improvement
+body:
+  - type: markdown
+    attributes:
+      value: "Do not attach private photos, albums, review ZIPs or full logs."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this help you do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested behavior
